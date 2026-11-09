@@ -5,3 +5,5 @@ pub mod lexer;
 pub mod lower;
 pub mod optimize;
 pub mod parser;
+pub mod codegen;
+pub mod driver;

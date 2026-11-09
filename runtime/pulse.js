@@ -1,0 +1,63 @@
+// Pulse browser loader.
+//
+// Instantiates a Pulse application's WebAssembly module and gives it access
+// to the DOM. The module refers to DOM nodes by integer handles (indices into
+// `nodes`) and passes strings as (pointer, length) pairs of UTF-8 in its
+// linear memory. This file has no dependencies and needs no build step.
+
+/**
+ * Loads and starts a Pulse app.
+ * @param {string | URL} wasmUrl URL of the compiled `app.wasm`.
+ * @returns {Promise<WebAssembly.Instance>}
+ */
+export async function start(wasmUrl) {
+  /** @type {(Node | null)[]} handle → DOM node; 0 is reserved as "null". */
+  const nodes = [null];
+  const decoder = new TextDecoder();
+  let memory = null;
+  let exports = null;
+
+  const str = (ptr, len) => decoder.decode(new Uint8Array(memory.buffer, ptr, len));
+  const add = (node) => nodes.push(node) - 1;
+
+  const imports = {
+    pulse: {
+      create_element: (ptr, len) => add(document.createElement(str(ptr, len))),
+      create_text: (ptr, len) => add(document.createTextNode(str(ptr, len))),
+      set_text: (node, ptr, len) => {
+        nodes[node].data = str(ptr, len);
+      },
+      set_attribute: (node, np, nl, vp, vl) => nodes[node].setAttribute(str(np, nl), str(vp, vl)),
+      remove_attribute: (node, ptr, len) => nodes[node].removeAttribute(str(ptr, len)),
+      append_child: (parent, child) => {
+        nodes[parent].appendChild(nodes[child]);
+      },
+      add_event_listener: (node, ptr, len, handler) => {
+        nodes[node].addEventListener(str(ptr, len), () => exports.pulse_dispatch(handler));
+      },
+      mount: (node, ptr, len) => {
+        const target = document.querySelector(str(ptr, len));
+        if (!target) return 0;
+        target.replaceChildren(nodes[node]);
+        return 1;
+      },
+      console_log: (ptr, len) => console.log(str(ptr, len)),
+      console_error: (ptr, len) => console.error(str(ptr, len)),
+    },
+  };
+
+  const response = fetch(wasmUrl);
+  let instance;
+  try {
+    ({ instance } = await WebAssembly.instantiateStreaming(response, imports));
+  } catch (err) {
+    // Servers that do not send `Content-Type: application/wasm` break
+    // streaming compilation; fall back to compiling from bytes.
+    const bytes = await (await fetch(wasmUrl)).arrayBuffer();
+    ({ instance } = await WebAssembly.instantiate(bytes, imports));
+  }
+  memory = instance.exports.memory;
+  exports = instance.exports;
+  exports.pulse_start();
+  return instance;
+}
