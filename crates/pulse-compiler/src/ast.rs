@@ -23,11 +23,19 @@ pub struct Program {
 
 #[derive(Debug)]
 pub enum Item {
-    /// `import ... from "...";` — accepted and ignored (Pulse built-ins are
-    /// always in scope).
-    Import,
+    Import(Import),
     Var(VarDecl),
     Function(FnDecl),
+}
+
+/// `import { signal } from "pulse";` or `import "./styles.css";`
+#[derive(Debug)]
+pub struct Import {
+    /// The module specifier, e.g. `pulse` or `./styles.css`.
+    pub source: String,
+    pub source_span: Span,
+    /// `import "x";` (no bindings): imported only for its side effects.
+    pub side_effect_only: bool,
 }
 
 #[derive(Debug)]

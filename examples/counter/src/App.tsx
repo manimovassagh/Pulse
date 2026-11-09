@@ -1,4 +1,5 @@
 import { signal, computed, effect, batch } from "pulse";
+import "./styles.css";
 
 // Global shared state: any component can read or update it.
 const count = signal<number>(0);

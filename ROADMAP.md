@@ -9,7 +9,8 @@ Counter example: render, click, and reactive update via signals, computed and ef
 ## Milestone 2: developer experience (in progress)
 - ✅ `pulse dev`: watch, incremental rebuild, hot module swap preserving global signals, error overlay
 - ✅ `pulse serve`; single-purpose crates; Playwright Test + TypeScript browser tests
-- CSS: `import "./x.css"` bundling, `public/` assets, Tailwind / CSS framework integration
+- ✅ CSS: `import "./x.css"` bundling, npm CSS frameworks, zero-config Tailwind, `public/` assets, CSS-only hot updates
+- `pulse.toml` for custom CSS tools (Sass, PostCSS, UnoCSS) and project settings
 - `pulse new` scaffolding
 
 ## Milestone 3: real components

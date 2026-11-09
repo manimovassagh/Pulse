@@ -7,10 +7,11 @@
 //!
 //! 1. Build the app with hot-reload hooks into `<cache>/dev`.
 //! 2. Serve it, injecting a small client script into `index.html`.
-//! 3. Poll the source tree; on change, rebuild and push an event over SSE:
+//! 3. Poll the project; on change, rebuild and push an event over SSE:
 //!    `reload` hot-swaps the WebAssembly module in place, keeping global
-//!    signal state, `full-reload` refreshes the page (HTML changed), and
-//!    `build-error` shows the compiler error in an overlay.
+//!    signal state; `css-update` (only stylesheets changed) swaps `app.css`
+//!    and keeps everything else; `full-reload` refreshes the page (HTML
+//!    changed); `build-error` shows the compiler error in an overlay.
 //!
 //! Only the Rust standard library is used.
 
@@ -18,7 +19,7 @@ mod http;
 mod reload;
 mod watch;
 
-use pulse_build::BuildOptions;
+use pulse_build::{BuildOptions, Project};
 use reload::{Event, Hub};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -66,15 +67,14 @@ pub fn dev(opts: DevOptions) -> Result<(), String> {
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
     log(&format!("dev server running at http://localhost:{}/  (Ctrl+C to stop)", addr.port()));
 
-    let site = DevSite { out_dir, entry: opts.entry.clone() };
+    let project = Project::new(&opts.entry);
+    let site = DevSite { out_dir, project: project.clone() };
     spawn_server(listener, {
         let hub = hub.clone();
         move |stream| site.handle(stream, &hub)
     });
 
-    let mut roots = vec![opts.entry.parent().unwrap_or(Path::new(".")).to_path_buf()];
-    roots.extend(pulse_build::index_html_path(&opts.entry));
-    let mut watcher = watch::Watcher::new(roots);
+    let mut watcher = watch::Watcher::new(vec![project.root.clone()]);
     let mut version = 0;
     loop {
         thread::sleep(POLL_INTERVAL);
@@ -88,9 +88,8 @@ pub fn dev(opts: DevOptions) -> Result<(), String> {
         version += 1;
         let started = Instant::now();
         match pulse_build::build(&build_opts) {
-            Ok(_) => {
-                let html_changed = changed.iter().any(|p| p.extension().is_some_and(|e| e == "html"));
-                let event = if html_changed { Event::FullReload } else { Event::Reload { version } };
+            Ok(report) => {
+                let event = event_for(&changed, version, report.css_bytes.is_some());
                 log(&format!(
                     "rebuilt in {} ({}) → {} browser(s)",
                     elapsed(started),
@@ -104,6 +103,18 @@ pub fn dev(opts: DevOptions) -> Result<(), String> {
                 hub.broadcast(Event::BuildError(e));
             }
         }
+    }
+}
+
+/// Chooses the cheapest browser update that reflects the changed files.
+fn event_for(changed: &[PathBuf], version: u64, has_css: bool) -> Event {
+    let has_ext = |ext: &str| changed.iter().any(|p| p.extension().is_some_and(|e| e == ext));
+    if has_ext("html") {
+        Event::FullReload
+    } else if has_css && changed.iter().all(|p| p.extension().is_some_and(|e| e == "css")) {
+        Event::CssUpdate { version }
+    } else {
+        Event::Reload { version, css: has_css }
     }
 }
 
@@ -140,7 +151,7 @@ where
 /// Request routing for `pulse dev`.
 struct DevSite {
     out_dir: PathBuf,
-    entry: PathBuf,
+    project: Project,
 }
 
 impl DevSite {
@@ -168,7 +179,7 @@ impl DevSite {
     fn index_html(&self) -> String {
         fs::read_to_string(self.out_dir.join("index.html"))
             .ok()
-            .or_else(|| pulse_build::index_html_path(&self.entry).and_then(|p| fs::read_to_string(p).ok()))
+            .or_else(|| self.project.index_html().and_then(|p| fs::read_to_string(p).ok()))
             .unwrap_or_else(|| pulse_build::DEFAULT_INDEX_HTML.to_string())
     }
 }
@@ -185,10 +196,7 @@ fn serve_file(stream: &mut TcpStream, req: &http::Request, root: &Path) -> std::
 
 /// Inserts the dev client script before `</body>` (or at the end).
 fn with_dev_client(html: &str) -> String {
-    match html.rfind("</body>") {
-        Some(i) => format!("{}{CLIENT_TAG}\n{}", &html[..i], &html[i..]),
-        None => format!("{html}\n{CLIENT_TAG}\n"),
-    }
+    pulse_build::insert_before(html, "</body>", CLIENT_TAG)
 }
 
 fn describe(changed: &[PathBuf]) -> String {
@@ -212,7 +220,16 @@ mod tests {
     #[test]
     fn injects_client_before_body_end() {
         let html = with_dev_client("<html><body><div id=\"app\"></div></body></html>");
-        assert!(html.ends_with(&format!("{CLIENT_TAG}\n</body></html>")), "{html}");
+        assert!(html.ends_with(&format!("{CLIENT_TAG}\n  </body></html>")), "{html}");
         assert!(with_dev_client("<p>bare</p>").contains(CLIENT_TAG));
+    }
+
+    #[test]
+    fn picks_cheapest_update() {
+        let files = |names: &[&str]| names.iter().map(PathBuf::from).collect::<Vec<_>>();
+        assert_eq!(event_for(&files(&["src/styles.css"]), 1, true), Event::CssUpdate { version: 1 });
+        assert_eq!(event_for(&files(&["src/App.tsx", "src/a.css"]), 2, true), Event::Reload { version: 2, css: true });
+        assert_eq!(event_for(&files(&["index.html", "src/App.tsx"]), 3, false), Event::FullReload);
+        assert_eq!(event_for(&files(&["src/a.css"]), 4, false), Event::Reload { version: 4, css: false });
     }
 }

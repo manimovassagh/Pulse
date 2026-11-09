@@ -66,6 +66,8 @@ pub struct Module {
     pub functions: Vec<Function>,
     /// Name of the root component to mount.
     pub entry: String,
+    /// Stylesheets imported with `import "./x.css"`, as written, in order.
+    pub stylesheets: Vec<String>,
 }
 
 /// A module-level `const`/`let`, e.g. a shared signal.

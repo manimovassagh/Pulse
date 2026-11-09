@@ -18,9 +18,15 @@ use std::collections::HashMap;
 pub fn lower(program: &ast::Program) -> Result<Module> {
     let mut decls = HashMap::new();
     let mut tops = Vec::new();
+    let mut stylesheets = Vec::new();
     for item in &program.items {
         let (name, span) = match item {
-            ast::Item::Import => continue,
+            ast::Item::Import(import) => {
+                if let Some(css) = import_stylesheet(import)? {
+                    stylesheets.push(css);
+                }
+                continue;
+            }
             ast::Item::Var(v) => (&v.name, v.name_span),
             ast::Item::Function(f) => (&f.name, f.name_span),
         };
@@ -66,7 +72,28 @@ pub fn lower(program: &ast::Program) -> Result<Module> {
             .unwrap_or_default();
         return err(format!("the root component `{entry}` must take no parameters and return JSX"), span);
     }
-    Ok(Module { globals, functions, entry })
+    Ok(Module { globals, functions, entry, stylesheets })
+}
+
+/// Validates an import. Returns the specifier if it is a stylesheet.
+fn import_stylesheet(import: &ast::Import) -> Result<Option<String>> {
+    let source = &import.source;
+    if source == "pulse" {
+        return Ok(None);
+    }
+    if source.ends_with(".css") {
+        if !import.side_effect_only {
+            return err(
+                format!("CSS modules are not supported; import the file for its styles: `import \"{source}\";`"),
+                import.source_span,
+            );
+        }
+        return Ok(Some(source.clone()));
+    }
+    err(
+        format!("cannot import `{source}`: only \"pulse\" and `.css` files can be imported for now"),
+        import.source_span,
+    )
 }
 
 /// The root component is the `export default function`, or else `App`.
@@ -146,7 +173,7 @@ impl<'a> Lowerer<'a> {
                     ast::Item::Var(v) => {
                         err(format!("`{}` is used in its own initializer", v.name), v.name_span)
                     }
-                    ast::Item::Import => unreachable!(),
+                    ast::Item::Import(_) => unreachable!(),
                 };
             }
             State::Pending => {}
@@ -165,7 +192,7 @@ impl<'a> Lowerer<'a> {
                 let ty = Ty::Fn(f.params.iter().map(|p| p.1.clone()).collect(), Box::new(f.ret.clone()));
                 (Top::Function(f), ty)
             }),
-            ast::Item::Import => unreachable!(),
+            ast::Item::Import(_) => unreachable!(),
         };
         self.scopes = scopes;
         self.rets = rets;
@@ -906,6 +933,19 @@ mod tests {
             "#,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn imports() {
+        let m = check(
+            "import { signal } from \"pulse\";\nimport \"./a.css\";\nimport \"pico/css/pico.css\";\nfunction App(): JSX.Element { return <p></p>; }",
+        )
+        .unwrap();
+        assert_eq!(m.stylesheets, ["./a.css", "pico/css/pico.css"]);
+        let e = check("import styles from \"./a.css\";\nfunction App(): JSX.Element { return <p></p>; }").unwrap_err();
+        assert!(e.message.contains("CSS modules are not supported"), "{}", e.message);
+        let e = check("import { x } from \"./other\";\nfunction App(): JSX.Element { return <p></p>; }").unwrap_err();
+        assert!(e.message.contains("cannot import `./other`"), "{}", e.message);
     }
 
     #[test]

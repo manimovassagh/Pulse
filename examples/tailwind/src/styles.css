@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+/* `dark:` utilities follow the `.dark` class (toggled from App.tsx) instead
+   of the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Customize the design system here, e.g.:
+@theme {
+  --color-brand: oklch(0.65 0.2 265);
+}
+*/

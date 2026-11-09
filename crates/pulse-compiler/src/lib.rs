@@ -22,16 +22,26 @@ pub mod parser;
 
 pub use codegen::CodegenOptions;
 
+/// The result of compiling one TSX module.
+#[derive(Debug)]
+pub struct Compiled {
+    /// Source of the generated Rust crate (`lib.rs`).
+    pub rust: String,
+    /// Stylesheets the module imports (`import "./x.css"`), as written.
+    pub stylesheets: Vec<String>,
+}
+
 /// Compiles TSX source to Rust source.
 ///
 /// Errors are returned rendered for humans, with file, line, column and a
 /// caret under the offending code.
-pub fn compile(source: &str, opts: &CodegenOptions) -> Result<String, String> {
+pub fn compile(source: &str, opts: &CodegenOptions) -> Result<Compiled, String> {
     let render = |d: diagnostic::Diagnostic| d.render(&opts.source_name, source);
     let program = parser::parse(source).map_err(render)?;
     let mut module = lower::lower(&program).map_err(render)?;
     optimize::optimize(&mut module);
-    Ok(codegen::generate(&module, opts))
+    let rust = codegen::generate(&module, opts);
+    Ok(Compiled { rust, stylesheets: module.stylesheets })
 }
 
 /// Parses and type-checks TSX source without generating code.

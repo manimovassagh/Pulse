@@ -98,10 +98,12 @@ fn run(args: Args) -> Result<(), String> {
             }
             eprintln!("Compiling {} ...", entry.display());
             let report = pulse_build::build(&opts)?;
+            let kib = |bytes: u64| format!("{:.1} KiB", bytes as f64 / 1024.0);
+            let css = report.css_bytes.map(|b| format!(", app.css {}", kib(b))).unwrap_or_default();
             eprintln!(
-                "Built {} ({:.1} KiB). Preview with `pulse serve {}`.",
-                report.wasm_path.display(),
-                report.wasm_bytes as f64 / 1024.0,
+                "Built {} (app.wasm {}{css}). Preview with `pulse serve {}`.",
+                opts.out_dir.display(),
+                kib(report.wasm_bytes),
                 opts.out_dir.display()
             );
             Ok(())

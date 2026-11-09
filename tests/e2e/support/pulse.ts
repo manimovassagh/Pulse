@@ -1,5 +1,5 @@
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,12 +54,20 @@ export function startServer(args: string[], cwd: string): Promise<PulseServer> {
   });
 }
 
-/** Copies an example app into a fresh temporary directory. */
+/**
+ * Copies an example app into a fresh temporary directory, outside the
+ * repository, like a standalone project. Examples with a package.json get the
+ * repository's node_modules linked in, standing in for `npm install`.
+ */
 export function copyExample(name: string): { dir: string; cleanup(): void } {
+  const source = join(repoRoot, "examples", name);
   const dir = mkdtempSync(join(tmpdir(), `pulse-${name}-`));
-  cpSync(join(repoRoot, "examples", name), dir, {
+  cpSync(source, dir, {
     recursive: true,
-    filter: (src) => !/[\\/](dist|\.pulse)$/.test(src),
+    filter: (src) => !/[\\/](dist|\.pulse|node_modules)$/.test(src),
   });
+  if (existsSync(join(source, "package.json"))) {
+    symlinkSync(join(repoRoot, "node_modules"), join(dir, "node_modules"), "dir");
+  }
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }

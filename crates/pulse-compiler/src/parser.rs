@@ -133,18 +133,20 @@ impl<'a> Parser<'a> {
         };
         match word.as_str() {
             "import" => {
-                // `import { signal } from "pulse";` — consume through the
-                // module string. Pulse built-ins are always in scope.
+                // The bindings are not needed (Pulse built-ins are always in
+                // scope); what matters is the module specifier.
                 self.bump()?;
+                let mut side_effect_only = true;
                 loop {
                     match self.bump()? {
-                        (Tok::Str(_), _) => break,
+                        (Tok::Str(source), source_span) => {
+                            self.eat_punct(";")?;
+                            return Ok(Item::Import(Import { source, source_span, side_effect_only }));
+                        }
                         (Tok::Eof, s) => return err("unterminated import", s),
-                        _ => {}
+                        _ => side_effect_only = false,
                     }
                 }
-                self.eat_punct(";")?;
-                Ok(Item::Import)
             }
             "export" => {
                 self.bump()?;
@@ -772,6 +774,7 @@ mod tests {
         let p = parse(
             r#"
             import { signal } from "pulse";
+            import "./styles.css";
             const count = signal<number>(0);
             export default function App(): JSX.Element {
               const label: string = "Count";
@@ -780,8 +783,10 @@ mod tests {
             "#,
         )
         .unwrap();
-        assert_eq!(p.items.len(), 3);
-        let Item::Function(f) = &p.items[2] else { panic!() };
+        assert_eq!(p.items.len(), 4);
+        assert!(matches!(&p.items[0], Item::Import(i) if i.source == "pulse" && !i.side_effect_only));
+        assert!(matches!(&p.items[1], Item::Import(i) if i.source == "./styles.css" && i.side_effect_only));
+        let Item::Function(f) = &p.items[3] else { panic!() };
         assert!(f.is_default_export);
         assert!(matches!(&f.ret, Some(TypeAnn::Named { name, .. }) if name == "JSX.Element"));
         assert_eq!(f.body.len(), 2);

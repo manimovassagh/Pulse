@@ -2,7 +2,8 @@
 //
 // Listens for rebuild events from the dev server and hot-swaps the
 // WebAssembly module in place (global signal state is preserved by the
-// loader). Shows compile errors in an overlay until they are fixed.
+// loader), or just the stylesheet when only CSS changed. Shows compile errors
+// in an overlay until they are fixed.
 import { start } from "/pulse.js";
 
 const OVERLAY_ID = "__pulse_error_overlay";
@@ -37,11 +38,31 @@ function hideError() {
   document.getElementById(OVERLAY_ID)?.remove();
 }
 
+/** Points the managed stylesheet link at the latest `app.css`. */
+function refreshCss(version) {
+  let link = document.querySelector("link[data-pulse-css]");
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.setAttribute("data-pulse-css", "");
+    document.head.appendChild(link);
+  }
+  link.href = `/app.css?v=${version}`;
+}
+
 const events = new EventSource("/__pulse/events");
 
-events.addEventListener("reload", async (e) => {
+events.addEventListener("css-update", (e) => {
   const { version } = JSON.parse(e.data);
   hideError();
+  refreshCss(version);
+  console.info(`[pulse] styles updated (build ${version})`);
+});
+
+events.addEventListener("reload", async (e) => {
+  const { version, css } = JSON.parse(e.data);
+  hideError();
+  if (css) refreshCss(version);
   try {
     await start(`/app.wasm?v=${version}`);
     console.info(`[pulse] hot reloaded (build ${version})`);

@@ -13,8 +13,11 @@ use std::time::Duration;
 /// Something the browser should react to.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
-    /// A new `app.wasm` is ready; hot-swap it.
-    Reload { version: u64 },
+    /// A new `app.wasm` is ready; hot-swap it (and refresh `app.css` if the
+    /// app has styles).
+    Reload { version: u64, css: bool },
+    /// Only stylesheets changed; refresh `app.css`, keep the running module.
+    CssUpdate { version: u64 },
     /// The page itself changed (`index.html`); reload it.
     FullReload,
     /// The build failed; show the message in an overlay.
@@ -24,7 +27,10 @@ pub enum Event {
 impl Event {
     fn to_sse(&self) -> String {
         match self {
-            Event::Reload { version } => format!("event: reload\ndata: {{\"version\":{version}}}\n\n"),
+            Event::Reload { version, css } => {
+                format!("event: reload\ndata: {{\"version\":{version},\"css\":{css}}}\n\n")
+            }
+            Event::CssUpdate { version } => format!("event: css-update\ndata: {{\"version\":{version}}}\n\n"),
             Event::FullReload => "event: full-reload\ndata: {}\n\n".to_string(),
             Event::BuildError(msg) => {
                 format!("event: build-error\ndata: {{\"message\":{}}}\n\n", json_string(msg))
@@ -115,7 +121,11 @@ mod tests {
 
     #[test]
     fn sse_encoding() {
-        assert_eq!(Event::Reload { version: 3 }.to_sse(), "event: reload\ndata: {\"version\":3}\n\n");
+        assert_eq!(
+            Event::Reload { version: 3, css: true }.to_sse(),
+            "event: reload\ndata: {\"version\":3,\"css\":true}\n\n"
+        );
+        assert_eq!(Event::CssUpdate { version: 4 }.to_sse(), "event: css-update\ndata: {\"version\":4}\n\n");
         assert_eq!(
             Event::BuildError("bad \"x\"\n  ^".into()).to_sse(),
             "event: build-error\ndata: {\"message\":\"bad \\\"x\\\"\\n  ^\"}\n\n"
@@ -128,8 +138,8 @@ mod tests {
         hub.broadcast(Event::BuildError("oops".into()));
         let rx = hub.subscribe();
         assert_eq!(rx.try_recv(), Ok(Event::BuildError("oops".into())));
-        hub.broadcast(Event::Reload { version: 2 });
-        assert_eq!(rx.try_recv(), Ok(Event::Reload { version: 2 }));
+        hub.broadcast(Event::Reload { version: 2, css: false });
+        assert_eq!(rx.try_recv(), Ok(Event::Reload { version: 2, css: false }));
         assert!(hub.subscribe().try_recv().is_err(), "error cleared after a good build");
     }
 

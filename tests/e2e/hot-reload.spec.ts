@@ -59,11 +59,26 @@ test.describe("pulse dev hot reload", () => {
     edit(appFile(), "const count = signal<number>(0);", 'const count = signal<number>("zero");');
     await expect(overlay).toBeVisible();
     await expect(overlay).toContainText("type mismatch: expected `number`, found `string`");
-    await expect(overlay).toContainText("App.tsx:4:30");
+    await expect(overlay).toContainText("App.tsx:5:30");
 
     edit(appFile(), 'signal<number>("zero")', "signal<number>(10)");
     await expect(overlay).toBeHidden();
     await expect(page.locator("#increment")).toHaveText("Count: 0"); // restored state wins over new initial value
+  });
+
+  test("CSS-only edits swap the stylesheet and keep all state", async ({ page }) => {
+    await page.goto(server.url);
+    const toggle = page.locator(".toggle");
+    await toggle.click();
+    await expect(toggle).toHaveText("Light is ON"); // component-local state
+    await markPage(page);
+
+    edit(join(app.dir, "src/styles.css"), ".stats {", "h1 {\n  color: rgb(1, 2, 3);\n}\n\n.stats {");
+
+    await expect(page.locator("h1")).toHaveCSS("color", "rgb(1, 2, 3)");
+    // No module swap happened: even component-local state is intact.
+    await expect(toggle).toHaveText("Light is ON");
+    expect(await pageWasKept(page)).toBe(true);
   });
 
   test("index.html edits trigger a full page reload", async ({ page }) => {

@@ -1,0 +1,9 @@
+{
+  "name": "pulse-example-tailwind",
+  "private": true,
+  "description": "Pulse app styled with Tailwind CSS. Run `npm install`, then `pulse dev src/App.tsx`.",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

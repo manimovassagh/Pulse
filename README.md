@@ -76,8 +76,11 @@ A Pulse app is a folder with a TSX entry file:
 ```text
 my-app/
 ├── src/
-│   └── App.tsx        # your root component (export default)
+│   ├── App.tsx        # your root component (export default)
+│   └── styles.css     # optional; imported from App.tsx
+├── public/            # optional; images, fonts, favicons, copied as-is
 ├── index.html         # optional; a default page is generated if missing
+├── package.json       # optional; only for npm packages such as Tailwind
 └── tsconfig.json      # optional; for editor type-checking (see below)
 ```
 
@@ -118,6 +121,9 @@ Open <http://localhost:3000>. Each time you save:
   terminal) with file, line and column. It disappears once you fix it;
 * editing `index.html` reloads the page.
 
+If only stylesheets changed, just `app.css` is swapped. The app keeps running
+untouched, local state included.
+
 The dev server is part of the `pulse` binary (Rust standard library only), so
 no extra tools are needed.
 
@@ -134,6 +140,64 @@ pulse serve dist           # preview the production build locally
 `dist/` contains only static files. Deploy them to any static host (nginx,
 S3, Netlify, GitHub Pages, ...). The only requirement is that `.wasm` is served
 as `application/wasm`, which all common hosts do.
+
+### Styling
+
+Pulse treats CSS like the rest of the build: import it, and it's bundled into
+`app.css` and linked from the page automatically.
+
+**Plain CSS:**
+
+```tsx
+import "./styles.css";
+```
+
+**A CSS framework from npm** (Bootstrap, Pico, Bulma, Open Props, ...).
+Bare specifiers resolve from `node_modules`:
+
+```bash
+npm install @picocss/pico
+```
+
+```tsx
+import "@picocss/pico/css/pico.min.css";
+```
+
+**Tailwind CSS:** install it once:
+
+```bash
+npm install -D tailwindcss @tailwindcss/cli
+```
+
+Create a stylesheet that imports Tailwind and import it from your app:
+
+```css
+/* src/styles.css */
+@import "tailwindcss";
+```
+
+```tsx
+import "./styles.css";
+
+export default function App(): JSX.Element {
+  return <h1 class="text-3xl font-bold text-sky-600">Hello</h1>;
+}
+```
+
+That's all: no config file and no plugin. Pulse notices `@import
+"tailwindcss"` and runs the Tailwind CLI, which picks up the classes used in
+your `.tsx` files, including ones switched by signals
+(`class={on.value ? "bg-pink-600" : "bg-slate-900"}`). In `pulse dev`, new
+classes show up on save; production builds are minified. Tailwind runs in
+parallel with the WebAssembly build, so it adds no build time. See
+[`examples/tailwind`](examples/tailwind):
+
+![Tailwind example](docs/tailwind.png)
+
+**Static assets:** files in `public/` are copied to the output root, so
+`public/logo.svg` is served as `logo.svg`.
+
+**CDN stylesheets:** a `<link>` in your `index.html` works as usual.
 
 ### Editor support
 
@@ -325,7 +389,7 @@ WebAssembly and runs in the browser:
 - [x] `pulse serve` for previewing production builds
 - [x] Workspace split into single-purpose crates (`compiler`, `build`, `dev`, `cli`, `runtime`)
 - [x] Browser tests with Playwright Test + TypeScript
-- [ ] CSS: `import "./styles.css"`, `public/` assets, Tailwind and other CSS frameworks
+- [x] CSS: `import "./styles.css"`, CSS frameworks from `node_modules`, zero-config Tailwind, `public/` assets, CSS-only hot updates
 
 Try it from a clone of this repo:
 
@@ -339,7 +403,9 @@ more.
 
 ## Not yet supported
 
-So that nothing surprises you: props, `if`/ternary rendering that switches
+So that nothing surprises you: CSS modules (`import styles from "./x.css"`),
+`url()` rewriting inside imported CSS (put such assets in `public/`), Sass/Less,
+props, `if`/ternary rendering that switches
 elements reactively, lists (`.map`), event objects (`e.target.value`), arrays,
 objects, interfaces, template literals, loops, `async`, and `fetch`. Using any
 of them gives a clear compile error rather than wrong output.
@@ -374,13 +440,14 @@ Repository layout:
 
 ```text
 crates/pulse-compiler/   TSX -> Rust: lexer, parser, type checker (lower), IR, optimizer, codegen
-crates/pulse-build/      Rust -> WASM via cargo, output bundle; native end-to-end test
+crates/pulse-build/      Rust -> WASM via cargo, CSS bundling + Tailwind, assets; native e2e test
 crates/pulse-dev/        dev server: HTTP, file watcher, SSE hot reload, browser client
 crates/pulse-cli/        the `pulse` command
 crates/pulse-runtime/    reactive core, DOM bindings, hot-reload state transfer
 runtime/pulse.js         browser loader
-types/pulse.d.ts         TypeScript declarations
-examples/counter/        demo app
+types/                   TypeScript declarations (pulse.d.ts, assets.d.ts)
+examples/counter/        demo app (signals, components, plain CSS)
+examples/tailwind/       Tailwind CSS + public/ assets
 tests/e2e/               Playwright specs (TypeScript)
 ```
 
