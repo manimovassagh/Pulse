@@ -23,8 +23,8 @@ test.describe("tailwind example", () => {
   });
 
   test("production build: Tailwind classes, reactive classes and public assets", async ({ page }) => {
-    pulse(["build", "src/App.tsx", "--out", "dist"], app.dir);
-    server = await startServer(["serve", join(app.dir, "dist"), "--port", "4600"], app.dir);
+    pulse(["build"], app.dir);
+    server = await startServer(["serve", "--port", "4600"], app.dir);
     await page.goto(server.url);
 
     const like = page.locator("#like");
@@ -48,7 +48,7 @@ test.describe("tailwind example", () => {
   });
 
   test("dev: classes added in TSX are generated on save", async ({ page }) => {
-    server = await startServer(["dev", "src/App.tsx", "--port", "4650"], app.dir);
+    server = await startServer(["dev", "--port", "4650"], app.dir);
     await page.goto(server.url);
     const title = page.locator("h1");
     await expect(title).toHaveText("Pulse + Tailwind");

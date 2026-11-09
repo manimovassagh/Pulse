@@ -11,7 +11,7 @@ Counter example: render, click, and reactive update via signals, computed and ef
 - ✅ `pulse serve`; single-purpose crates; Playwright Test + TypeScript browser tests
 - ✅ CSS: `import "./x.css"` bundling, npm CSS frameworks, zero-config Tailwind, `public/` assets, CSS-only hot updates
 - `pulse.toml` for custom CSS tools (Sass, PostCSS, UnoCSS) and project settings
-- `pulse new` scaffolding
+- ✅ `pulse new` scaffolding; commands find the project by convention (no arguments)
 
 ## Milestone 3: real components
 - Component props (`function Card(props: { title: string })`), children

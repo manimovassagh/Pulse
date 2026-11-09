@@ -35,22 +35,21 @@ const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const DEBOUNCE: Duration = Duration::from_millis(60);
 
 pub struct DevOptions {
-    pub entry: PathBuf,
+    pub project: Project,
     pub port: u16,
-    pub cache_dir: PathBuf,
+    /// Path to the `pulse-runtime` crate.
     pub runtime_path: PathBuf,
 }
 
 /// Runs the dev server until the process is stopped.
 pub fn dev(opts: DevOptions) -> Result<(), String> {
-    let out_dir = opts.cache_dir.join("dev");
+    let project = opts.project;
+    let out_dir = project.cache_dir().join("dev");
     let build_opts = BuildOptions {
-        entry: opts.entry.clone(),
         out_dir: out_dir.clone(),
-        cache_dir: opts.cache_dir.clone(),
         runtime_path: opts.runtime_path,
-        release: true,
         hot: true,
+        ..BuildOptions::new(&project)
     };
     let hub = Hub::default();
 
@@ -67,7 +66,6 @@ pub fn dev(opts: DevOptions) -> Result<(), String> {
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
     log(&format!("dev server running at http://localhost:{}/  (Ctrl+C to stop)", addr.port()));
 
-    let project = Project::new(&opts.entry);
     let site = DevSite { out_dir, project: project.clone() };
     spawn_server(listener, {
         let hub = hub.clone();
@@ -123,6 +121,7 @@ pub fn serve(dir: PathBuf, port: u16) -> Result<(), String> {
     if !dir.join("index.html").is_file() {
         return Err(format!("{} has no index.html; run `pulse build` first", dir.display()));
     }
+    let dir = dir.canonicalize().unwrap_or(dir);
     let listener = http::bind(port).map_err(|e| format!("cannot start server: {e}"))?;
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
     log(&format!("serving {} at http://localhost:{}/  (Ctrl+C to stop)", dir.display(), addr.port()));

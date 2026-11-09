@@ -39,13 +39,13 @@ pub struct BuildOptions {
 }
 
 impl BuildOptions {
-    /// Defaults: output to `dist/`, cache in `.pulse/`, runtime from
-    /// `$PULSE_RUNTIME_PATH` or from this repository.
-    pub fn new(entry: PathBuf) -> Self {
+    /// A production build with defaults: output to `<root>/dist`, cache in
+    /// `<root>/.pulse`, runtime from `$PULSE_RUNTIME_PATH` or this repository.
+    pub fn new(project: &Project) -> Self {
         BuildOptions {
-            entry,
-            out_dir: PathBuf::from("dist"),
-            cache_dir: PathBuf::from(".pulse"),
+            entry: project.entry.clone(),
+            out_dir: project.dist_dir(),
+            cache_dir: project.cache_dir(),
             runtime_path: default_runtime_path(),
             release: true,
             hot: false,

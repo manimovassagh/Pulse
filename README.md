@@ -24,8 +24,9 @@ export default function App(): JSX.Element {
 ```
 
 ```bash
-pulse dev src/App.tsx      # develop: http://localhost:3000, hot reload on save
-pulse build src/App.tsx    # ship: dist/ = index.html + app.wasm + a small loader
+pulse new my-app && cd my-app
+pulse dev       # develop: http://localhost:3000, hot reload on save
+pulse build     # ship: dist/ = index.html + app.wasm + app.css + a small loader
 ```
 
 The production build is plain static files: host it on any web server or CDN.
@@ -67,48 +68,19 @@ Then install the `pulse` CLI from this repository:
 cargo install --path crates/pulse-cli
 ```
 
-*(Planned: a published release, so this becomes `cargo install pulse-cli`.)*
+*(Planned: published releases, so this becomes a one-line install.)*
 
 ### 2. Create an app
 
-A Pulse app is a folder with a TSX entry file:
-
-```text
-my-app/
-├── src/
-│   ├── App.tsx        # your root component (export default)
-│   └── styles.css     # optional; imported from App.tsx
-├── public/            # optional; images, fonts, favicons, copied as-is
-├── index.html         # optional; a default page is generated if missing
-├── package.json       # optional; only for npm packages such as Tailwind
-└── tsconfig.json      # optional; for editor type-checking (see below)
+```bash
+pulse new my-app
+cd my-app
 ```
-
-`src/App.tsx`:
-
-```tsx
-import { signal, computed } from "pulse";
-
-const count = signal<number>(0);
-const doubled = computed(() => count.value * 2);
-
-export default function App(): JSX.Element {
-  return (
-    <main class="app">
-      <h1>Hello, Pulse</h1>
-      <button onClick={() => count.value++}>Clicked {count.value} times</button>
-      <p>Doubled: {doubled.value}</p>
-    </main>
-  );
-}
-```
-
-*(Planned: `pulse new my-app` to scaffold this.)*
 
 ### 3. Develop with hot reload
 
 ```bash
-pulse dev src/App.tsx
+pulse dev
 ```
 
 Open <http://localhost:3000>. Each time you save:
@@ -130,16 +102,55 @@ no extra tools are needed.
 ### 4. Build for production
 
 ```bash
-pulse build src/App.tsx --out dist
-```
-
-```bash
-pulse serve dist           # preview the production build locally
+pulse build     # writes dist/
+pulse serve     # preview dist/ locally
 ```
 
 `dist/` contains only static files. Deploy them to any static host (nginx,
 S3, Netlify, GitHub Pages, ...). The only requirement is that `.wasm` is served
 as `application/wasm`, which all common hosts do.
+
+### Project structure
+
+Pulse follows conventions instead of configuration. Commands run in the
+project folder and need no arguments:
+
+```text
+my-app/
+├── src/
+│   ├── App.tsx        # entry: the root component (`export default function App`)
+│   └── styles.css     # imported from App.tsx with `import "./styles.css"`
+├── public/            # static files (images, fonts, favicon), copied to the site root
+├── index.html         # page template (optional; a default one is used if missing)
+├── types/             # TypeScript declarations for your editor (created by `pulse new`)
+├── tsconfig.json      # editor / `tsc` settings
+├── package.json       # only if you use npm packages, e.g. Tailwind
+├── dist/              # production build output (generated)
+└── .pulse/            # build cache (generated)
+```
+
+The entry is `src/App.tsx` (`src/main.tsx` and `src/index.tsx` also work).
+For an unusual setup, pass a project folder or an entry file explicitly:
+`pulse dev path/to/app` or `pulse build path/to/Main.tsx`.
+
+The root component is written like this:
+
+```tsx
+import { signal, computed } from "pulse";
+
+const count = signal<number>(0);
+const doubled = computed(() => count.value * 2);
+
+export default function App(): JSX.Element {
+  return (
+    <main class="app">
+      <h1>Hello, Pulse</h1>
+      <button onClick={() => count.value++}>Clicked {count.value} times</button>
+      <p>Doubled: {doubled.value}</p>
+    </main>
+  );
+}
+```
 
 ### Styling
 
@@ -169,7 +180,8 @@ import "@picocss/pico/css/pico.min.css";
 npm install -D tailwindcss @tailwindcss/cli
 ```
 
-Create a stylesheet that imports Tailwind and import it from your app:
+Create a stylesheet that imports Tailwind and import it from your app (the
+`styles.css` created by `pulse new` works too):
 
 ```css
 /* src/styles.css */
@@ -201,23 +213,11 @@ parallel with the WebAssembly build, so it adds no build time. See
 
 ### Editor support
 
-Pulse ships TypeScript declarations in [`types/pulse.d.ts`](types/pulse.d.ts),
-so VS Code (or `tsc --noEmit`) understands `import { signal } from "pulse"` and
-JSX. Point your `tsconfig.json` at them:
-
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "jsx": "preserve",
-    "noEmit": true,
-    "paths": { "pulse": ["../../types/pulse.d.ts"] }
-  },
-  "include": ["src", "../../types"]
-}
-```
-
-Code that the Pulse compiler accepts also type-checks with `tsc`.
+`pulse new` sets up `types/` and `tsconfig.json`, so VS Code (or
+`tsc --noEmit`) understands `import { signal } from "pulse"`, JSX and CSS
+imports out of the box. The declarations are the same ones in this
+repository's [`types/`](types/) folder. Code that the Pulse compiler accepts
+also type-checks with `tsc`.
 
 ---
 
@@ -347,7 +347,7 @@ App.tsx ──► Lexer/Parser ──► AST ──► Type checker ──► Ty
 
 Generating Rust (rather than raw WASM bytes) gives Pulse the full Rust
 optimizer and type system as a safety net for free. The generated code is
-readable. Run `pulse emit src/App.tsx` to see it.
+readable. Run `pulse emit` in a project to see it.
 
 ---
 
@@ -355,12 +355,16 @@ readable. Run `pulse emit src/App.tsx` to see it.
 
 | Command | What it does |
 |---|---|
-| `pulse dev <entry.tsx> [--port 3000]` | Dev server with hot reload and error overlay. |
-| `pulse build <entry.tsx> [--out dist]` | Production build to `dist/` (`index.html`, `app.wasm`, `pulse.js`). |
-| `pulse serve [dist] [--port 3000]` | Serve a build locally. |
-| `pulse check <entry.tsx>` | Parse and type-check only; fast feedback. |
-| `pulse emit <entry.tsx>` | Print the generated Rust code. |
-| `pulse new <name>` | *Planned*: scaffold a new app. |
+| `pulse new <name>` | Create a new app with the conventional layout. |
+| `pulse dev [--port 3000]` | Dev server with hot reload and error overlay. |
+| `pulse build [--out dist]` | Production build to `dist/` (`index.html`, `app.wasm`, `app.css`, `pulse.js`, `public/` files). |
+| `pulse serve [--port 3000]` | Serve the production build locally. |
+| `pulse check` | Parse and type-check only; fast feedback. |
+| `pulse emit` | Print the generated Rust code. |
+
+All commands work on the project in the current directory. Each also accepts
+a project folder or an entry file (`pulse dev examples/counter`); `pulse serve`
+also accepts a build folder.
 
 ---
 
@@ -390,11 +394,12 @@ WebAssembly and runs in the browser:
 - [x] Workspace split into single-purpose crates (`compiler`, `build`, `dev`, `cli`, `runtime`)
 - [x] Browser tests with Playwright Test + TypeScript
 - [x] CSS: `import "./styles.css"`, CSS frameworks from `node_modules`, zero-config Tailwind, `public/` assets, CSS-only hot updates
+- [x] Convention over configuration: `pulse new`, and every command works without arguments
 
 Try it from a clone of this repo:
 
 ```bash
-cargo run -p pulse-cli -- dev examples/counter/src/App.tsx
+cargo run -p pulse-cli -- dev examples/counter
 ```
 
 The [roadmap](ROADMAP.md) covers what comes next: CSS integration, component

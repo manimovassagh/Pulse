@@ -1,0 +1,39 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.app {
+  text-align: center;
+}
+
+.logo {
+  width: 64px;
+  height: 64px;
+}
+
+button {
+  font: inherit;
+  padding: 0.6rem 1.2rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #0ea5e9;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #0284c7;
+}
+
+.hint {
+  color: #64748b;
+}

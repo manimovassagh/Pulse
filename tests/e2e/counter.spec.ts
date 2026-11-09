@@ -1,5 +1,4 @@
 import { test, expect, type ConsoleMessage } from "@playwright/test";
-import { join } from "node:path";
 import { copyExample, pulse, startServer, type PulseServer } from "./support/pulse";
 
 // The milestone-1 demo: a production build served by `pulse serve`.
@@ -9,8 +8,8 @@ test.describe("counter example (production build)", () => {
 
   test.beforeAll(async () => {
     app = copyExample("counter");
-    pulse(["build", "src/App.tsx", "--out", "dist"], app.dir);
-    server = await startServer(["serve", join(app.dir, "dist"), "--port", "4400"], app.dir);
+    pulse(["build"], app.dir);
+    server = await startServer(["serve", "--port", "4400"], app.dir);
   });
 
   test.afterAll(async () => {

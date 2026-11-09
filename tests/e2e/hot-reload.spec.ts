@@ -21,7 +21,7 @@ test.describe("pulse dev hot reload", () => {
 
   test.beforeEach(async () => {
     app = copyExample("counter");
-    server = await startServer(["dev", "src/App.tsx", "--port", "4500"], app.dir);
+    server = await startServer(["dev", "--port", "4500"], app.dir);
   });
 
   test.afterEach(async ({}, testInfo) => {
