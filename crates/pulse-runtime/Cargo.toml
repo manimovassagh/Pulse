@@ -1,0 +1,8 @@
+[package]
+name = "pulse-runtime"
+description = "Reactive core and DOM bindings for the Pulse frontend framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
