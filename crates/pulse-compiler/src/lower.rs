@@ -796,3 +796,124 @@ fn always_returns(body: &[Stmt]) -> bool {
         _ => false,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(src: &str) -> Result<Module> {
+        lower(&crate::parser::parse(src).unwrap())
+    }
+
+    /// Compiles `body` inside an `App` component and returns the error message.
+    fn error_in_app(body: &str) -> String {
+        let src = format!("export default function App(): JSX.Element {{\n{body}\nreturn <div></div>;\n}}");
+        match check(&src) {
+            Ok(_) => panic!("expected an error for:\n{body}"),
+            Err(e) => e.message,
+        }
+    }
+
+    #[test]
+    fn accepts_valid_program() {
+        let m = check(
+            r#"
+            const count = signal<number>(0);
+            const doubled: Computed<number> = computed(() => count.value * 2);
+            function label(n: number): string { return "n=" + n; }
+            function Child(): JSX.Element { return <span>{label(doubled.value)}</span>; }
+            export default function App(): JSX.Element {
+              const inc: () => void = () => count.value++;
+              return <div onClick={inc}><Child /></div>;
+            }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(m.entry, "App");
+        assert_eq!(m.globals[0].ty, Ty::Signal(Box::new(Ty::Number)));
+        assert_eq!(m.functions.len(), 3);
+    }
+
+    #[test]
+    fn type_errors() {
+        let cases = [
+            (r#"const s = signal<number>("zero");"#, "expected `number`, found `string`"),
+            (r#"const n: string = 5;"#, "expected `string`, found `number`"),
+            ("const s = signal(0); s.value = true;", "expected `number`, found `boolean`"),
+            ("const c = computed(() => 1); c.value = 2;", "computed values are read-only"),
+            ("const x = 1; x = 2;", "Pulse variables are immutable"),
+            ("const b = 1 && true;", "need `boolean` operands"),
+            (r#"const b = 1 === "1";"#, "always false"),
+            ("const y = missing + 1;", "cannot find `missing`"),
+            ("const s = signal(\"a\"); s.value++;", "expected `number`, found `string`"),
+            ("const s = signal(0); const z = s.length;", "property `length` does not exist"),
+            ("const f = (x) => x;", "needs a type annotation"),
+            ("const a: any = 1;", "`any` is not allowed"),
+            ("const v = console.log(1);", "has no value"),
+        ];
+        for (code, expected) in cases {
+            let msg = error_in_app(code);
+            assert!(msg.contains(expected), "for `{code}`:\n  expected error containing {expected:?}\n  got {msg:?}");
+        }
+    }
+
+    #[test]
+    fn jsx_errors() {
+        let cases = [
+            ("<div onClick={1}></div>", "event handlers must be functions"),
+            ("<div onClick=\"x\"></div>", "expects a function"),
+            ("<div>{true}</div>", "booleans are not rendered"),
+            ("<Nope />", "cannot find component `Nope`"),
+            ("<Child title=\"x\" />", "props are not supported yet"),
+            ("<div>{signal(1).value > 0 ? <a></a> : <b></b>}</div>", "reactive conditional rendering"),
+        ];
+        for (jsx, expected) in cases {
+            let src = format!(
+                "function Child(): JSX.Element {{ return <i></i>; }}\nexport default function App(): JSX.Element {{ return {jsx}; }}"
+            );
+            let msg = check(&src).map(|_| String::new()).unwrap_or_else(|e| e.message);
+            assert!(msg.contains(expected), "for `{jsx}`: got {msg:?}");
+        }
+    }
+
+    #[test]
+    fn functions_must_return_on_every_path() {
+        let msg = check(
+            "function f(n: number): number { if (n > 0) { return 1; } }\nexport default function App(): JSX.Element { return <p></p>; }",
+        )
+        .unwrap_err()
+        .message;
+        assert!(msg.contains("must return a `number` on every path"), "{msg}");
+    }
+
+    #[test]
+    fn entry_point_rules() {
+        let e = check("function Foo(): JSX.Element { return <p></p>; }").unwrap_err();
+        assert!(e.message.contains("no root component"));
+        let m = check("function App(): JSX.Element { return <p></p>; }").unwrap();
+        assert_eq!(m.entry, "App");
+        let e = check("export default function Main(n: number): JSX.Element { return <p></p>; }").unwrap_err();
+        assert!(e.message.contains("must take no parameters"));
+    }
+
+    #[test]
+    fn declarations_can_be_used_before_definition() {
+        check(
+            r#"
+            export default function App(): JSX.Element { return <p>{greeting()}{later.value}</p>; }
+            function greeting(): string { return "hi"; }
+            const later = signal("x");
+            "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn recursion_requires_annotation() {
+        check("function fact(n: number): number { if (n <= 1) { return 1; } return n * fact(n - 1); }\nfunction App(): JSX.Element { return <p>{fact(5)}</p>; }")
+            .unwrap();
+        let e = check("function loop(n: number) { return loop(n); }\nfunction App(): JSX.Element { return <p></p>; }")
+            .unwrap_err();
+        assert!(e.message.contains("add a return type annotation"), "{}", e.message);
+    }
+}

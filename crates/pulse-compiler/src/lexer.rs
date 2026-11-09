@@ -51,8 +51,8 @@ impl<'a> Lexer<'a> {
             self.pos += rest.len() - trimmed.len();
             if trimmed.starts_with("//") {
                 self.pos += trimmed.find('\n').unwrap_or(trimmed.len());
-            } else if trimmed.starts_with("/*") {
-                match trimmed[2..].find("*/") {
+            } else if let Some(body) = trimmed.strip_prefix("/*") {
+                match body.find("*/") {
                     Some(end) => self.pos += end + 4,
                     None => {
                         return Err(Diagnostic::new(

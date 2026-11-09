@@ -2,7 +2,7 @@
 
 Each milestone ends with something that runs in a browser and is covered by tests.
 
-## Milestone 1: end-to-end prototype (in progress)
+## Milestone 1: end-to-end prototype ✅ done
 TSX → parser → typed IR → optimizer → Rust → WASM → browser.
 Counter example: render, click, and reactive update via signals, computed and effects.
 

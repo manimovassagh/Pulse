@@ -33,9 +33,9 @@ with any static file server.
 Pulse is **frontend-only and backend-agnostic**. It doesn't care what your
 server is written in; your app talks to backends through standard web APIs.
 
-> **Status:** early development. The [Status](#status) section below lists
-> exactly what works today and what is planned. Anything marked *planned* in
-> this README doesn't exist yet.
+> **Status:** early development. Milestone 1 (TSX → WASM → reactive DOM) works
+> and is tested; see [Status](#status). Anything marked *planned* in this
+> README doesn't exist yet.
 
 ---
 
@@ -253,7 +253,7 @@ App.tsx ──► Lexer/Parser ──► AST ──► Type checker ──► Ty
   bindings through a tiny import interface (`create_element`, `set_text`,
   `append_child`, `add_event_listener`, ...). It has no `wasm-bindgen` and no
   dependencies.
-* **`runtime/pulse.js`**: a ~100-line loader that instantiates the module and
+* **`runtime/pulse.js`**: a ~70-line loader that instantiates the module and
   gives it access to the DOM.
 * **`types/pulse.d.ts`**: TypeScript declarations for editors.
 
@@ -277,18 +277,32 @@ readable. Run `pulse emit src/App.tsx` to see it.
 
 ## Status
 
-Milestone 1: a minimal end-to-end prototype.
+**Milestone 1 (end-to-end prototype) is complete.** The counter example in
+[`examples/counter`](examples/counter/src/App.tsx) compiles from TSX to
+WebAssembly and runs in the browser:
 
-- [x] Reactive runtime: `signal`, `computed`, `effect`, `batch`, `untrack`, automatic dependency tracking (unit-tested)
+![Counter example running in Chromium](docs/counter.png)
+
+- [x] Reactive runtime: `signal`, `computed`, `effect`, `batch`, `untrack`, automatic dependency tracking
 - [x] DOM bindings through WASM imports, plus an in-memory DOM for native tests
 - [x] TSX lexer and parser (components, JSX, arrows, operators, `if`/`return`, generic calls)
-- [x] TypeScript type checking to a typed IR
-- [x] Optimizer: constant folding, text-node merging
-- [ ] Rust code generation
-- [ ] `pulse build` / `check` / `emit` CLI
-- [ ] JS loader and default `index.html`
-- [ ] Counter example running in a real browser (end-to-end test)
-- [ ] `types/pulse.d.ts`
+- [x] TypeScript type checking to a typed IR, with errors that point at line and column
+- [x] Optimizer: constant folding, text-node merging, static vs. reactive analysis
+- [x] Rust code generation
+- [x] `pulse build` / `check` / `emit` CLI
+- [x] JS loader and default `index.html`
+- [x] `types/pulse.d.ts`: the example also passes `tsc --noEmit`
+- [x] Tested end to end: native (generated code against the in-memory DOM) and in headless Chromium
+
+Try it from a clone of this repo:
+
+```bash
+cargo run -p pulse-compiler -- build examples/counter/src/App.tsx --out examples/counter/dist
+```
+
+```bash
+python3 -m http.server 8080 --directory examples/counter/dist
+```
 
 The [roadmap](ROADMAP.md) covers what comes next: component props, reactive
 conditionals and lists, input events, cleanup/ownership, a dev server and
@@ -304,7 +318,26 @@ of them gives a clear compile error rather than wrong output.
 ## Development
 
 ```bash
-cargo test --workspace
+cargo test --workspace                    # unit tests + native end-to-end test
+```
+
+```bash
+cargo build -p pulse-compiler && node tests/e2e/counter.test.mjs   # browser test (needs Playwright)
+```
+
+```bash
+cd examples/counter && tsc -p .           # check the example with the real TypeScript compiler
+```
+
+Repository layout:
+
+```text
+crates/pulse-compiler/   lexer, parser, type checker (lower), IR, optimizer, codegen, driver, CLI
+crates/pulse-runtime/    reactive core, DOM bindings, text formatting
+runtime/pulse.js         browser loader
+types/pulse.d.ts         TypeScript declarations
+examples/counter/        the milestone-1 demo app
+tests/e2e/               browser end-to-end test
 ```
 
 ## License

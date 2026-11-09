@@ -53,7 +53,7 @@ pub fn generate(module: &Module, opts: &CodegenOptions) -> String {
         out.push_str(&format!(
             "thread_local! {{\n    static G_{name}: {ty} = {};\n}}\n\n\
              fn g_{name}() -> {ty} {{\n    G_{name}.with(|v| v.clone())\n}}\n\n",
-            expr_value(&g.init, &g.ty)
+            expr(&g.init)
         ));
     }
 
@@ -136,7 +136,7 @@ fn num_lit(n: f64) -> String {
 fn stmt(s: &Stmt) -> String {
     match s {
         Stmt::Let { name, init } => {
-            format!("let {}: {} = {};", local(name), rust_ty(&init.ty), expr_value(init, &init.ty))
+            format!("let {}: {} = {};", local(name), rust_ty(&init.ty), expr(init))
         }
         Stmt::Expr(e) => format!("{};", expr(e)),
         Stmt::Return(Some(e)) => format!("return {};", expr(e)),
@@ -156,11 +156,6 @@ fn block(stmts: &[Stmt]) -> String {
 }
 
 // ----- expressions ---------------------------------------------------------------
-
-/// An expression stored into a binding of type `ty`.
-fn expr_value(e: &Expr, _ty: &Ty) -> String {
-    expr(e)
-}
 
 fn expr(e: &Expr) -> String {
     match &e.kind {
