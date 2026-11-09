@@ -1,7 +1,16 @@
-//! The build pipeline: TSX source → Rust crate → `cargo` → `.wasm` bundle.
+//! # pulse-build
+//!
+//! Turns a Pulse app into a deployable bundle:
+//!
+//! ```text
+//! App.tsx ─ pulse-compiler ─► lib.rs ─ cargo (wasm32) ─► app.wasm ─► out dir: index.html, app.wasm, pulse.js
+//! ```
+//!
+//! The generated Rust lives in a small crate inside the cache directory, so
+//! cargo's incremental compilation makes rebuilds fast (~0.3 s).
 
-use crate::codegen::{self, CodegenOptions};
-use crate::{lower, optimize, parser};
+pub use pulse_compiler::check;
+use pulse_compiler::CodegenOptions;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,22 +18,14 @@ use std::process::Command;
 /// The browser loader, embedded so the CLI is a single self-contained binary.
 pub const LOADER_JS: &str = include_str!("../../../runtime/pulse.js");
 
-/// Compiles TSX source to Rust source. Errors come back already rendered with
-/// file, line, column and a caret.
+/// Compiles TSX source to Rust source (production build).
 pub fn compile_to_rust(source: &str, file_name: &str) -> Result<String, String> {
-    let render = |d: crate::diagnostic::Diagnostic| d.render(file_name, source);
-    let program = parser::parse(source).map_err(render)?;
-    let mut module = lower::lower(&program).map_err(render)?;
-    optimize::optimize(&mut module);
-    let opts = CodegenOptions { source_name: file_name.to_string(), ..Default::default() };
-    Ok(codegen::generate(&module, &opts))
+    compile_with(source, file_name, false)
 }
 
-/// Parses and type-checks only.
-pub fn check(source: &str, file_name: &str) -> Result<(), String> {
-    let program = parser::parse(source).map_err(|d| d.render(file_name, source))?;
-    lower::lower(&program).map_err(|d| d.render(file_name, source))?;
-    Ok(())
+fn compile_with(source: &str, file_name: &str, hot: bool) -> Result<String, String> {
+    let opts = CodegenOptions { source_name: file_name.to_string(), hot, ..Default::default() };
+    pulse_compiler::compile(source, &opts)
 }
 
 pub struct BuildOptions {
@@ -36,6 +37,8 @@ pub struct BuildOptions {
     pub runtime_path: PathBuf,
     /// Optimized (`--release`) WebAssembly.
     pub release: bool,
+    /// Development build: include hot-reload hooks.
+    pub hot: bool,
 }
 
 impl BuildOptions {
@@ -48,6 +51,7 @@ impl BuildOptions {
             cache_dir: PathBuf::from(".pulse"),
             runtime_path: default_runtime_path(),
             release: true,
+            hot: false,
         }
     }
 }
@@ -141,7 +145,7 @@ pub fn build(opts: &BuildOptions) -> Result<BuildReport, String> {
         ));
     }
     let file_name = opts.entry.file_name().unwrap().to_string_lossy().to_string();
-    let rust = format_rust(&compile_to_rust(&source, &file_name)?);
+    let rust = format_rust(&compile_with(&source, &file_name, opts.hot)?);
 
     let crate_dir = opts.cache_dir.join("app");
     write_app_crate(&crate_dir, &rust, &opts.runtime_path)?;
@@ -155,11 +159,12 @@ pub fn build(opts: &BuildOptions) -> Result<BuildReport, String> {
     if opts.release {
         cmd.arg("--release");
     }
-    let status = cmd.status().map_err(|e| format!("failed to run cargo: {e}"))?;
-    if !status.success() {
+    let output = cmd.output().map_err(|e| format!("failed to run cargo: {e}"))?;
+    if !output.status.success() {
         return Err(format!(
-            "cargo failed to compile the generated code (see {}).\n\
+            "{}\ncargo failed to compile the generated code (see {}).\n\
              hint: make sure the target is installed: rustup target add wasm32-unknown-unknown",
+            String::from_utf8_lossy(&output.stderr).trim_end(),
             crate_dir.join("lib.rs").display()
         ));
     }
@@ -168,7 +173,10 @@ pub fn build(opts: &BuildOptions) -> Result<BuildReport, String> {
     let built = target_dir.join("wasm32-unknown-unknown").join(profile).join("pulse_app.wasm");
     fs::create_dir_all(&opts.out_dir).map_err(|e| format!("cannot create {}: {e}", opts.out_dir.display()))?;
     let wasm_path = opts.out_dir.join("app.wasm");
-    fs::copy(&built, &wasm_path).map_err(|e| format!("cannot copy {}: {e}", built.display()))?;
+    // Copy then rename, so a server never sees a half-written module.
+    let tmp = opts.out_dir.join("app.wasm.tmp");
+    fs::copy(&built, &tmp).map_err(|e| format!("cannot copy {}: {e}", built.display()))?;
+    fs::rename(&tmp, &wasm_path).map_err(|e| format!("cannot write {}: {e}", wasm_path.display()))?;
     fs::write(opts.out_dir.join("pulse.js"), LOADER_JS).map_err(|e| e.to_string())?;
     fs::write(opts.out_dir.join("index.html"), index_html(&opts.entry)?).map_err(|e| e.to_string())?;
 
@@ -179,13 +187,16 @@ pub fn build(opts: &BuildOptions) -> Result<BuildReport, String> {
 /// Uses the app's own `index.html` (next to the entry file or one directory
 /// up) or falls back to a minimal page.
 fn index_html(entry: &Path) -> Result<String, String> {
-    let dir = entry.parent().unwrap_or(Path::new("."));
-    for candidate in [dir.join("index.html"), dir.join("../index.html")] {
-        if candidate.is_file() {
-            return fs::read_to_string(&candidate).map_err(|e| format!("cannot read {}: {e}", candidate.display()));
-        }
+    match index_html_path(entry) {
+        Some(path) => fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display())),
+        None => Ok(DEFAULT_INDEX_HTML.to_string()),
     }
-    Ok(DEFAULT_INDEX_HTML.to_string())
+}
+
+/// The app's own `index.html`, if it has one.
+pub fn index_html_path(entry: &Path) -> Option<PathBuf> {
+    let dir = entry.parent().unwrap_or(Path::new("."));
+    [dir.join("index.html"), dir.join("../index.html")].into_iter().find(|p| p.is_file())
 }
 
 pub const DEFAULT_INDEX_HTML: &str = r#"<!doctype html>

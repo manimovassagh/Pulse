@@ -1,15 +1,11 @@
 [package]
 name = "pulse-compiler"
-description = "TSX to WebAssembly compiler for the Pulse frontend framework"
+description = "TSX to Rust compiler for the Pulse frontend framework"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "pulse"
-path = "src/main.rs"
-
 [dependencies]
 # Shared value formatting, so constant folding produces exactly the text the
 # runtime would. The runtime itself has no dependencies.
-pulse-runtime = { path = "../pulse-runtime" }
+pulse-runtime.workspace = true

@@ -1,0 +1,9 @@
+[package]
+name = "pulse-dev"
+description = "Development server for Pulse apps with hot reloading"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pulse-build.workspace = true

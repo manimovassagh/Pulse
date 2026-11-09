@@ -1,0 +1,15 @@
+{
+  "name": "pulse-workspace",
+  "private": true,
+  "description": "JavaScript tooling for the Pulse repository: browser end-to-end tests and type checks",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p tests/e2e && tsc -p examples/counter"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -3,10 +3,32 @@
 version = 4
 
 [[package]]
+name = "pulse-build"
+version = "0.1.0"
+dependencies = [
+ "pulse-compiler",
+]
+
+[[package]]
+name = "pulse-cli"
+version = "0.1.0"
+dependencies = [
+ "pulse-build",
+ "pulse-dev",
+]
+
+[[package]]
 name = "pulse-compiler"
 version = "0.1.0"
 dependencies = [
  "pulse-runtime",
+]
+
+[[package]]
+name = "pulse-dev"
+version = "0.1.0"
+dependencies = [
+ "pulse-build",
 ]
 
 [[package]]

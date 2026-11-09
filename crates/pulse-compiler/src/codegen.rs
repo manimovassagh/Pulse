@@ -29,11 +29,14 @@ pub struct CodegenOptions {
     pub mount_selector: String,
     /// Name of the source file, for the header comment.
     pub source_name: String,
+    /// Export hooks that carry global signal values across hot reloads
+    /// (development builds only).
+    pub hot: bool,
 }
 
 impl Default for CodegenOptions {
     fn default() -> Self {
-        CodegenOptions { mount_selector: "#app".into(), source_name: "App.tsx".into() }
+        CodegenOptions { mount_selector: "#app".into(), source_name: "App.tsx".into(), hot: false }
     }
 }
 
@@ -83,7 +86,47 @@ pub fn generate(module: &Module, opts: &CodegenOptions) -> String {
         mangle(&module.entry),
         opts.mount_selector
     ));
+    if opts.hot {
+        out.push_str(&hot_hooks(module));
+    }
     out
+}
+
+/// Exports used by the loader to carry global signal values from the old
+/// module to the new one during a hot reload (see `pulse_runtime::hot`).
+fn hot_hooks(module: &Module) -> String {
+    let signals: Vec<(&str, String)> = module
+        .globals
+        .iter()
+        .filter_map(|g| match &g.ty {
+            Ty::Signal(inner) => Some((g.name.as_str(), rust_ty(inner))),
+            _ => None,
+        })
+        .collect();
+    let mut save = String::new();
+    let mut restore = String::new();
+    for (name, ty) in &signals {
+        let m = mangle(name);
+        save.push_str(&format!("    s.put({name:?}, &g_{m}().get_untracked());\n"));
+        restore.push_str(&format!(
+            "    if let Some(v) = r.get::<{ty}>({name:?}) {{\n        g_{m}().set(v);\n    }}\n"
+        ));
+    }
+    format!(
+        "\n/// Hot reload: snapshot global signals; returns a pointer (see `pulse_hot_len`).\n\
+         #[no_mangle]\n\
+         pub extern \"C\" fn pulse_hot_save() -> *const u8 {{\n    \
+             let mut s = pulse_runtime::hot::Snapshot::new();\n{save}    s.finish()\n\
+         }}\n\n\
+         #[no_mangle]\n\
+         pub extern \"C\" fn pulse_hot_len() -> usize {{\n    pulse_runtime::hot::len()\n}}\n\n\
+         #[no_mangle]\n\
+         pub extern \"C\" fn pulse_hot_alloc(len: usize) -> *mut u8 {{\n    pulse_runtime::hot::alloc(len)\n}}\n\n\
+         /// Hot reload: restore values whose name and type are unchanged.\n\
+         #[no_mangle]\n\
+         pub extern \"C\" fn pulse_hot_restore() {{\n    \
+             let r = pulse_runtime::hot::take_restored();\n{restore}}}\n"
+    )
 }
 
 // ----- names and types -------------------------------------------------------
@@ -512,6 +555,18 @@ mod tests {
             out.contains("effect({ let v_n = v_n.clone(); let v_name = v_name.clone(); move || { console_log("),
             "{out}"
         );
+    }
+
+    #[test]
+    fn hot_hooks_only_in_dev_builds() {
+        let src = "const count = signal(0);\nconst label = signal(\"x\");\nconst d = computed(() => count.value);\nexport default function App(): JSX.Element { return <p></p>; }";
+        assert!(!gen(src).contains("pulse_hot_save"));
+        let mut m = crate::lower::lower(&crate::parser::parse(src).unwrap()).unwrap();
+        crate::optimize::optimize(&mut m);
+        let out = generate(&m, &CodegenOptions { hot: true, ..Default::default() });
+        assert!(out.contains(r#"s.put("count", &g_count().get_untracked());"#), "{out}");
+        assert!(out.contains(r#"if let Some(v) = r.get::<String>("label")"#), "{out}");
+        assert!(!out.contains(r#""d""#), "computed values are derived, not saved: {out}");
     }
 
     #[test]

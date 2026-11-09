@@ -24,11 +24,11 @@ export default function App(): JSX.Element {
 ```
 
 ```bash
-pulse build src/App.tsx --out dist
+pulse dev src/App.tsx      # develop: http://localhost:3000, hot reload on save
+pulse build src/App.tsx    # ship: dist/ = index.html + app.wasm + a small loader
 ```
 
-That's it: `dist/` holds `index.html`, `app.wasm` and a small loader. Serve it
-with any static file server.
+The production build is plain static files: host it on any web server or CDN.
 
 Pulse is **frontend-only and backend-agnostic**. It doesn't care what your
 server is written in; your app talks to backends through standard web APIs.
@@ -64,10 +64,10 @@ rustup target add wasm32-unknown-unknown
 Then install the `pulse` CLI from this repository:
 
 ```bash
-cargo install --path crates/pulse-compiler
+cargo install --path crates/pulse-cli
 ```
 
-*(Planned: a published release, so this becomes `cargo install pulse-compiler`.)*
+*(Planned: a published release, so this becomes `cargo install pulse-cli`.)*
 
 ### 2. Create an app
 
@@ -102,20 +102,38 @@ export default function App(): JSX.Element {
 
 *(Planned: `pulse new my-app` to scaffold this.)*
 
-### 3. Build and run
+### 3. Develop with hot reload
+
+```bash
+pulse dev src/App.tsx
+```
+
+Open <http://localhost:3000>. Each time you save:
+
+* the app is recompiled (about 0.3 s for the example) and the new WebAssembly
+  module is **swapped into the open page without a reload**;
+* **global signal state is kept**: if you clicked a counter up to 5 and then
+  edit the component, it is still 5. Component-local state starts fresh;
+* a compile error appears as an **overlay in the browser** (and in the
+  terminal) with file, line and column. It disappears once you fix it;
+* editing `index.html` reloads the page.
+
+The dev server is part of the `pulse` binary (Rust standard library only), so
+no extra tools are needed.
+
+### 4. Build for production
 
 ```bash
 pulse build src/App.tsx --out dist
 ```
 
 ```bash
-python3 -m http.server 8080 --directory dist
+pulse serve dist           # preview the production build locally
 ```
 
-Open <http://localhost:8080>. Any static server works; the browser just needs
-`.wasm` files served as `application/wasm`.
-
-*(Planned: `pulse dev` with file watching and a built-in dev server.)*
+`dist/` contains only static files. Deploy them to any static host (nginx,
+S3, Netlify, GitHub Pages, ...). The only requirement is that `.wasm` is served
+as `application/wasm`, which all common hosts do.
 
 ### Editor support
 
@@ -244,17 +262,23 @@ App.tsx ──► Lexer/Parser ──► AST ──► Type checker ──► Ty
                                                                                   pulse-runtime (signals + DOM bindings)
 ```
 
-* **`crates/pulse-compiler`**: the compiler and `pulse` CLI (Rust, no external
+* **`crates/pulse-compiler`**: a pure library (no I/O, no external
   dependencies). It parses TSX, checks TypeScript types, lowers JSX to a DOM
   tree IR, optimizes it (constant folding, text merging, static vs. reactive
-  analysis), and emits Rust that is compiled to `wasm32-unknown-unknown`.
+  analysis), and emits Rust.
+* **`crates/pulse-build`**: compiles that Rust to `wasm32-unknown-unknown` with
+  cargo (incrementally, in a cache directory) and writes the output bundle.
+* **`crates/pulse-dev`**: the dev server: polling file watcher, minimal HTTP
+  server, Server-Sent Events for hot reload, and the error overlay.
+* **`crates/pulse-cli`**: the `pulse` command.
 * **`crates/pulse-runtime`**: linked into every app. The reactive graph
   (push–pull signals, lazy computed values, batched effects) plus direct DOM
   bindings through a tiny import interface (`create_element`, `set_text`,
   `append_child`, `add_event_listener`, ...). It has no `wasm-bindgen` and no
   dependencies.
-* **`runtime/pulse.js`**: a ~70-line loader that instantiates the module and
-  gives it access to the DOM.
+* **`runtime/pulse.js`**: a small loader that instantiates the module, gives
+  it access to the DOM, and performs hot swaps (state hand-over between the old
+  and new module).
 * **`types/pulse.d.ts`**: TypeScript declarations for editors.
 
 Generating Rust (rather than raw WASM bytes) gives Pulse the full Rust
@@ -267,11 +291,12 @@ readable. Run `pulse emit src/App.tsx` to see it.
 
 | Command | What it does |
 |---|---|
-| `pulse build <entry.tsx> [--out dist]` | Compile the app to `dist/` (`index.html`, `app.wasm`, `pulse.js`). |
+| `pulse dev <entry.tsx> [--port 3000]` | Dev server with hot reload and error overlay. |
+| `pulse build <entry.tsx> [--out dist]` | Production build to `dist/` (`index.html`, `app.wasm`, `pulse.js`). |
+| `pulse serve [dist] [--port 3000]` | Serve a build locally. |
 | `pulse check <entry.tsx>` | Parse and type-check only; fast feedback. |
 | `pulse emit <entry.tsx>` | Print the generated Rust code. |
 | `pulse new <name>` | *Planned*: scaffold a new app. |
-| `pulse dev <entry.tsx>` | *Planned*: watch, rebuild and serve. |
 
 ---
 
@@ -294,18 +319,22 @@ WebAssembly and runs in the browser:
 - [x] `types/pulse.d.ts`: the example also passes `tsc --noEmit`
 - [x] Tested end to end: native (generated code against the in-memory DOM) and in headless Chromium
 
+**Milestone 2 (in progress): developer experience**
+
+- [x] `pulse dev`: file watching, incremental rebuilds, hot module swap that keeps global signal state, error overlay
+- [x] `pulse serve` for previewing production builds
+- [x] Workspace split into single-purpose crates (`compiler`, `build`, `dev`, `cli`, `runtime`)
+- [x] Browser tests with Playwright Test + TypeScript
+- [ ] CSS: `import "./styles.css"`, `public/` assets, Tailwind and other CSS frameworks
+
 Try it from a clone of this repo:
 
 ```bash
-cargo run -p pulse-compiler -- build examples/counter/src/App.tsx --out examples/counter/dist
+cargo run -p pulse-cli -- dev examples/counter/src/App.tsx
 ```
 
-```bash
-python3 -m http.server 8080 --directory examples/counter/dist
-```
-
-The [roadmap](ROADMAP.md) covers what comes next: component props, reactive
-conditionals and lists, input events, cleanup/ownership, a dev server and
+The [roadmap](ROADMAP.md) covers what comes next: CSS integration, component
+props, reactive conditionals and lists, input events, cleanup/ownership and
 more.
 
 ## Not yet supported
@@ -317,27 +346,42 @@ of them gives a clear compile error rather than wrong output.
 
 ## Development
 
+Rust tests (unit tests plus a native end-to-end test of generated code):
+
 ```bash
-cargo test --workspace                    # unit tests + native end-to-end test
+cargo test --workspace
+```
+
+Browser tests (Playwright Test, TypeScript) and type checks:
+
+```bash
+npm install
 ```
 
 ```bash
-cargo build -p pulse-compiler && node tests/e2e/counter.test.mjs   # browser test (needs Playwright)
+npx playwright install chromium   # once, if no browser is installed
 ```
 
 ```bash
-cd examples/counter && tsc -p .           # check the example with the real TypeScript compiler
+npm run test:e2e
+```
+
+```bash
+npm run typecheck                 # e2e specs + the example app with the real `tsc`
 ```
 
 Repository layout:
 
 ```text
-crates/pulse-compiler/   lexer, parser, type checker (lower), IR, optimizer, codegen, driver, CLI
-crates/pulse-runtime/    reactive core, DOM bindings, text formatting
+crates/pulse-compiler/   TSX -> Rust: lexer, parser, type checker (lower), IR, optimizer, codegen
+crates/pulse-build/      Rust -> WASM via cargo, output bundle; native end-to-end test
+crates/pulse-dev/        dev server: HTTP, file watcher, SSE hot reload, browser client
+crates/pulse-cli/        the `pulse` command
+crates/pulse-runtime/    reactive core, DOM bindings, hot-reload state transfer
 runtime/pulse.js         browser loader
 types/pulse.d.ts         TypeScript declarations
-examples/counter/        the milestone-1 demo app
-tests/e2e/               browser end-to-end test
+examples/counter/        demo app
+tests/e2e/               Playwright specs (TypeScript)
 ```
 
 ## License

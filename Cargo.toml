@@ -1,8 +1,20 @@
 [workspace]
 resolver = "2"
-members = ["crates/pulse-compiler", "crates/pulse-runtime"]
+members = [
+    "crates/pulse-runtime",  # reactive core + DOM bindings, linked into every app
+    "crates/pulse-compiler", # TSX -> typed IR -> Rust (pure library, no I/O)
+    "crates/pulse-build",    # Rust -> WASM via cargo, bundles the output directory
+    "crates/pulse-dev",      # dev server: file watching, hot reload
+    "crates/pulse-cli",      # the `pulse` command
+]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[workspace.dependencies]
+pulse-runtime = { path = "crates/pulse-runtime" }
+pulse-compiler = { path = "crates/pulse-compiler" }
+pulse-build = { path = "crates/pulse-build" }
+pulse-dev = { path = "crates/pulse-dev" }

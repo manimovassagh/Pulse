@@ -1,0 +1,9 @@
+[package]
+name = "pulse-build"
+description = "Builds Pulse apps: compiles generated Rust to WebAssembly and writes the bundle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+pulse-compiler.workspace = true

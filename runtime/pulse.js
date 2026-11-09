@@ -5,12 +5,22 @@
 // `nodes`) and passes strings as (pointer, length) pairs of UTF-8 in its
 // linear memory. This file has no dependencies and needs no build step.
 
+/** The running module, so a later `start` can hot-swap it. */
+let current = null;
+
 /**
  * Loads and starts a Pulse app.
+ *
+ * Calling it again replaces the running app with a new module (hot reload).
+ * If both modules were built by `pulse dev`, global signal values are carried
+ * over to the new module.
+ *
  * @param {string | URL} wasmUrl URL of the compiled `app.wasm`.
  * @returns {Promise<WebAssembly.Instance>}
  */
 export async function start(wasmUrl) {
+  const snapshot = current ? saveState(current.exports) : null;
+
   /** @type {(Node | null)[]} handle → DOM node; 0 is reserved as "null". */
   const nodes = [null];
   const decoder = new TextDecoder();
@@ -58,6 +68,20 @@ export async function start(wasmUrl) {
   }
   memory = instance.exports.memory;
   exports = instance.exports;
+  if (snapshot && exports.pulse_hot_restore) {
+    const ptr = exports.pulse_hot_alloc(snapshot.length);
+    new Uint8Array(memory.buffer, ptr, snapshot.length).set(snapshot);
+    exports.pulse_hot_restore();
+  }
   exports.pulse_start();
+  current = instance;
   return instance;
+}
+
+/** Copies the old module's state snapshot out of its memory. */
+function saveState(exports) {
+  if (!exports.pulse_hot_save) return null;
+  const ptr = exports.pulse_hot_save();
+  const len = exports.pulse_hot_len();
+  return new Uint8Array(exports.memory.buffer, ptr, len).slice();
 }

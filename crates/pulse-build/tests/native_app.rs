@@ -5,7 +5,7 @@
 //! This checks the generated code end to end without a browser; the browser
 //! test lives in `tests/e2e/counter.test.mjs`.
 
-use pulse_compiler::driver;
+use pulse_build as driver;
 use std::path::Path;
 use std::process::Command;
 

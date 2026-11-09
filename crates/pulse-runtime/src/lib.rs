@@ -6,12 +6,14 @@
 //!   automatic dependency tracking;
 //! * [`dom`] — direct DOM manipulation through a minimal WebAssembly host
 //!   interface (with an in-memory DOM for native tests);
+//! * [`hot`] — state transfer for hot reloading in development;
 //! * [`text`] — JavaScript-compatible value-to-text conversion.
 //!
 //! Application code does not use this crate directly: the Pulse compiler
 //! translates TSX components into Rust that calls into it.
 
 pub mod dom;
+pub mod hot;
 pub mod reactive;
 pub mod text;
 
